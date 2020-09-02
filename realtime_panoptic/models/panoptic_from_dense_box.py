@@ -346,3 +346,13 @@ class PanopticFromDenseBox:
     def select_over_all_levels(self, boxlists):
 
         return get_select_over_all_levels(boxlists)
+
+
+'''
+@torch.jit.script
+def get_locations(locations):
+    return [len(loc_per_level) for loc_per_level in locations]
+
+@torch.jit.script
+def get_channels(box_cls):
+    return box_cls.shape'''

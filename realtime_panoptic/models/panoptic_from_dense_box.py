@@ -6,12 +6,44 @@ from realtime_panoptic.utils.boxlist_ops import (boxlist_nms, cat_boxlist, remov
 
 
 @torch.jit.script
-def get_locations(locations):
-    return [len(loc_per_level) for loc_per_level in locations]
+def get_dynamic_data(box_cls, box_regression, centerness):
 
-@torch.jit.script
-def get_channels(box_cls):
-    return box_cls.shape
+    N, C, H, W = box_cls.shape
+    # M = H x W is the total number of proposal for this single feature map
+
+    # put in the same format as locations
+    # from (N, C, H, W) to (N, H, W, C)
+    box_cls = box_cls.view(N, C, H, W).permute(0, 2, 3, 1)
+    # from (N, H, W, C) to (N, M, C)
+    # map class prob to (-1, +1)
+    box_cls = box_cls.reshape(N, -1, C).sigmoid()
+    # from (N, 4, H, W) to (N, H, W, 4) to (N, M, 4)
+    box_regression = box_regression.view(N, 4, H, W).permute(0, 2, 3, 1)
+    box_regression = box_regression.reshape(N, -1, 4)
+    # from (N, 4, H, W) to (N, H, W, 1) to (N, M)
+    # map centerness prob to (-1, +1)
+    centerness = centerness.view(N, 1, H, W).permute(0, 2, 3, 1)
+    centerness = centerness.reshape(N, -1).sigmoid()
+
+    # before NMS, per level filter out low cls prob with threshold 0.05
+    # after this candidate_inds of size (N, M, C) with values corresponding to
+    # low prob predictions become 0, otherwise 1
+    candidate_inds = box_cls > 0.05
+
+    # pre_nms_top_n of size (N, M * C) => (N, 1)
+    # N -> batch index, 1 -> total number of bbox predictions per image
+    pre_nms_top_n = candidate_inds.view(N, -1).sum(1)
+    # total number of proposal before NMS
+    # if have more than self.pre_nms_top_n (1000) clamp to 1000
+    pre_nms_top_n = pre_nms_top_n.clamp(max=1000)
+
+    # multiply the classification scores with centerness scores
+    # (N, M, C) * (N, M, 1)
+    box_cls = box_cls * centerness[:, :, None]
+
+    N = torch.Tensor(N)
+    return N, box_cls, box_regression, centerness, candidate_inds, pre_nms_top_n
+
 
 
 class PanopticFromDenseBox:
@@ -177,41 +209,13 @@ class PanopticFromDenseBox:
             A list of dense bounding boxes from each FPN layer.
         """
 
-        N, C, H, W = get_channels(box_cls)
-        # M = H x W is the total number of proposal for this single feature map
-
-        # put in the same format as locations
-        # from (N, C, H, W) to (N, H, W, C)
-        box_cls = box_cls.view(N, C, H, W).permute(0, 2, 3, 1)
-        # from (N, H, W, C) to (N, M, C)
-        # map class prob to (-1, +1)
-        box_cls = box_cls.reshape(N, -1, C).sigmoid()
-        # from (N, 4, H, W) to (N, H, W, 4) to (N, M, 4)
-        box_regression = box_regression.view(N, 4, H, W).permute(0, 2, 3, 1)
-        box_regression = box_regression.reshape(N, -1, 4)
-        # from (N, 4, H, W) to (N, H, W, 1) to (N, M)
-        # map centerness prob to (-1, +1)
-        centerness = centerness.view(N, 1, H, W).permute(0, 2, 3, 1)
-        centerness = centerness.reshape(N, -1).sigmoid()
-
-        # before NMS, per level filter out low cls prob with threshold 0.05
-        # after this candidate_inds of size (N, M, C) with values corresponding to
-        # low prob predictions become 0, otherwise 1
-        candidate_inds = box_cls > self.pre_nms_thresh
-
-        # pre_nms_top_n of size (N, M * C) => (N, 1)
-        # N -> batch index, 1 -> total number of bbox predictions per image
-        pre_nms_top_n = candidate_inds.view(N, -1).sum(1)
-        # total number of proposal before NMS
-        # if have more than self.pre_nms_top_n (1000) clamp to 1000
-        pre_nms_top_n = pre_nms_top_n.clamp(max=self.pre_nms_top_n)
-
-        # multiply the classification scores with centerness scores
-        # (N, M, C) * (N, M, 1)
-        box_cls = box_cls * centerness[:, :, None]
+        N, box_cls, box_regression, centerness, candidate_inds, pre_nms_top_n = get_dynamic_data(box_cls, box_regression, centerness)
 
         results = []
-        for i in range(N):
+        for i in range(10000):
+            
+            if( torch.Tensor(i) == N ):
+                break
             # filer out low score candidates
             per_box_cls = box_cls[i]  #  (M, C)
             per_candidate_inds = candidate_inds[i]  #  (M, C)
@@ -255,8 +259,7 @@ class PanopticFromDenseBox:
                 per_locations[:, 1] - per_box_regression[:, 1],
                 per_locations[:, 0] + per_box_regression[:, 2],
                 per_locations[:, 1] + per_box_regression[:, 3],
-            ],
-                                     dim=1)
+            ], dim=1)
 
             h, w = image_sizes[i]
 

@@ -4,7 +4,6 @@ import torch.nn.functional as F
 from realtime_panoptic.utils.bounding_box import BoxList
 from realtime_panoptic.utils.boxlist_ops import (boxlist_nms, cat_boxlist, remove_small_boxes)
 
-
 @torch.jit.script
 def get_dynamic_data(box_cls, box_regression, centerness):
 
@@ -41,8 +40,9 @@ def get_dynamic_data(box_cls, box_regression, centerness):
     # (N, M, C) * (N, M, 1)
     box_cls = box_cls * centerness[:, :, None]
 
-    N = torch.Tensor(N)
-    return N, box_cls, box_regression, centerness, candidate_inds, pre_nms_top_n
+    N = torch.zeros(1) + N
+
+    return (N, box_cls, box_regression, centerness, candidate_inds, pre_nms_top_n)
 
 
 

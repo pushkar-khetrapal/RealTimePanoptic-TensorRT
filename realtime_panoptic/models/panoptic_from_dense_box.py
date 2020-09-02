@@ -10,7 +10,7 @@ def get_locations(locations):
     return [len(loc_per_level) for loc_per_level in locations]
 
 @torch.jit.script
-def get_channels():
+def get_channels(box_cls):
     return box_cls.shape
 
 class PanopticFromDenseBox:

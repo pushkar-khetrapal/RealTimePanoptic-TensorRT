@@ -9,7 +9,7 @@ import time
 
 
 #---------------------------------------------------------------------------------
-onnx_model_path = '/content/model_cnn.onnx'
+onnx_model_path = 'model.onnx'
 
 # These two modes are dependent on hardwares
 fp16_mode = True

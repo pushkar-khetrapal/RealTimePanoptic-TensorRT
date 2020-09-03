@@ -1,6 +1,6 @@
 import copy
 
-import cv2
+#import cv2
 import numpy as np
 import torch
 
@@ -260,8 +260,8 @@ def visualize_detection_image(predictions, original_image, label_id_to_names, fa
 
         x, y = box[:2]
         s = text_template.format(label, score)
-        cv2.putText(visualized_image, s, (x, y), cv2.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 1)
+        #cv2.putText(visualized_image, s, (x, y), cv2.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 1)
 
         top_left, bottom_right = box[:2].tolist(), box[2:].tolist()
-        visualized_image = cv2.rectangle(visualized_image, tuple(top_left), tuple(bottom_right), tuple(color), 1)
+        #visualized_image = cv2.rectangle(visualized_image, tuple(top_left), tuple(bottom_right), tuple(color), 1)
     return visualized_image

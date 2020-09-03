@@ -120,7 +120,6 @@ class RTPanoNet(torch.nn.Module):
         h, w = levelness_logits.size()[-2:]
         levelness_location = self.compute_locations_per_level(h, w, self.fpn_strides[0] // 2, levelness_logits.device)
         locations.append(levelness_location)
-        xyza = [(1024, 2048)]
 
         return (locations, box_cls, box_regression, centerness, levelness_logits, semantic_logits, interpolated_semantic_logits)
 

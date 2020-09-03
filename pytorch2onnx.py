@@ -54,8 +54,8 @@ model.to(device)
 
 model.load_state_dict(torch.load('cvpr_realtime_pano_cityscapes_standalone_no_prefix.pth'))
 
-output_names = ["output_0"] + ["output_%d" % i for i in range(1,7)]
+output_names = ["output_0"] + ["output_%d" % i for i in range(1,24)]
 input_names = ["input1"]
 
-x = torch.randn(1, 3, 1024, 2048, requires_grad=True).to('cuda')
+x = torch.randn(1, 3, 480, 640, requires_grad=True).to('cuda')
 torch.onnx.export(model, x, "model.onnx", verbose=True, input_names=input_names, output_names=output_names)

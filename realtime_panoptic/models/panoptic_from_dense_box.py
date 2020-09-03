@@ -4,68 +4,35 @@ import torch.nn.functional as F
 from realtime_panoptic.utils.bounding_box import BoxList
 from realtime_panoptic.utils.boxlist_ops import (boxlist_nms, cat_boxlist, remove_small_boxes)
 
-@torch.jit.script
-def get_dynamic_data(box_cls, box_regression, centerness):
-
-    N, C, H, W = box_cls.shape
-    # M = H x W is the total number of proposal for this single feature map
-
-    # put in the same format as locations
-    # from (N, C, H, W) to (N, H, W, C)
-    box_cls = box_cls.view(N, C, H, W).permute(0, 2, 3, 1)
-    # from (N, H, W, C) to (N, M, C)
-    # map class prob to (-1, +1)
-    box_cls = box_cls.reshape(N, -1, C).sigmoid()
-    # from (N, 4, H, W) to (N, H, W, 4) to (N, M, 4)
-    box_regression = box_regression.view(N, 4, H, W).permute(0, 2, 3, 1)
-    box_regression = box_regression.reshape(N, -1, 4)
-    # from (N, 4, H, W) to (N, H, W, 1) to (N, M)
-    # map centerness prob to (-1, +1)
-    centerness = centerness.view(N, 1, H, W).permute(0, 2, 3, 1)
-    centerness = centerness.reshape(N, -1).sigmoid()
-
-    # before NMS, per level filter out low cls prob with threshold 0.05
-    # after this candidate_inds of size (N, M, C) with values corresponding to
-    # low prob predictions become 0, otherwise 1
-    candidate_inds = box_cls > 0.05
-
-    # pre_nms_top_n of size (N, M * C) => (N, 1)
-    # N -> batch index, 1 -> total number of bbox predictions per image
-    pre_nms_top_n = candidate_inds.view(N, -1).sum(1)
-    # total number of proposal before NMS
-    # if have more than self.pre_nms_top_n (1000) clamp to 1000
-    pre_nms_top_n = pre_nms_top_n.clamp(max=1000)
-
-    # multiply the classification scores with centerness scores
-    # (N, M, C) * (N, M, 1)
-    box_cls = box_cls * centerness[:, :, None]
-
-    N = torch.zeros(1) + N
-
-    return (N, box_cls, box_regression, centerness, candidate_inds, pre_nms_top_n)
-
-
-
 class PanopticFromDenseBox:
     """Performs post-processing on the outputs of the RTPanonet.
+
     Parameters
     ----------
     pre_nms_thresh: float
         Acceptance class probability threshold for bounding box candidates before NMS.
+
     pre_nms_top_n: int
         Maximum number of accepted bounding box candidates before NMS.
+
     nms_thresh: float
         NMS threshold.
+
     fpn_post_nms_top_n: int
         Maximum number of detected object per image.
+
     min_size: int
         Minimum dimension of accepted detection.
+
     num_classes: int
         Number of total semantic classes (stuff and things).
+
     mask_thresh: float
         Bounding box IoU threshold to determined 'similar bounding box' in mask reconstruction.
+
     instance_id_range: list of int
         [min_id, max_id] defines the range of id in 1:num_classes that corresponding to thing classes.
+
     is_training: bool
         Whether the current process is during training process.
     """
@@ -98,24 +65,33 @@ class PanopticFromDenseBox:
         self, locations, box_cls, box_regression, centerness, levelness_logits, semantic_logits, image_sizes
     ):
         """ Reconstruct panoptic segmentation result from raw predictions.
+
         This function conduct post processing of panoptic head raw prediction, including bounding box
         prediction, semantic segmentation and levelness to reconstruct instance segmentation results.
+
         Parameters
         ----------
         locations: list of torch.Tensor
             Corresponding pixel locations of each FPN predictions.
+
         box_cls: list of torch.Tensor
             Predicted bounding box class from each FPN layers.
+
         box_regression: list of torch.Tensor
             Predicted bounding box offsets from each FPN layers.
+
         centerness: list of torch.Tensor
             Predicted object centerness from each FPN layers.
+
         levelness_logits:
             Global prediction of best source FPN layer for each pixel location.
+
         semantic_logits:
             Global prediction of semantic segmentation.
+
         image_sizes: list of [int,int]
             Image sizes.
+
         Returns:
         --------
         boxlists: list of BoxList
@@ -192,30 +168,64 @@ class PanopticFromDenseBox:
 
     def forward_for_single_feature_map(self, locations, box_cls, box_regression, centerness, image_sizes):
         """Recover dense bounding box detection results from raw predictions for each FPN layer.
+
         Parameters
         ----------
         locations: torch.Tensor
             Corresponding pixel location of FPN feature map with size of (N, H * W, 2).
+
         box_cls: torch.Tensor
             Predicted bounding box class probability with size of (N, C, H, W).
+
         box_regression: torch.Tensor
             Predicted bounding box offset centered at corresponding pixel with size of (N, 4, H, W).
+
         centerness: torch.Tensor
             Predicted centerness of corresponding pixel with size of (N, 1, H, W).
+
         Note: N is the number of FPN level.
+
         Returns
         -------
         results: List of BoxList
             A list of dense bounding boxes from each FPN layer.
         """
 
-        N, box_cls, box_regression, centerness, candidate_inds, pre_nms_top_n = get_dynamic_data(box_cls, box_regression, centerness)
+        N, C, H, W = box_cls.shape
+        # M = H x W is the total number of proposal for this single feature map
+
+        # put in the same format as locations
+        # from (N, C, H, W) to (N, H, W, C)
+        box_cls = box_cls.view(N, C, H, W).permute(0, 2, 3, 1)
+        # from (N, H, W, C) to (N, M, C)
+        # map class prob to (-1, +1)
+        box_cls = box_cls.reshape(N, -1, C).sigmoid()
+        # from (N, 4, H, W) to (N, H, W, 4) to (N, M, 4)
+        box_regression = box_regression.view(N, 4, H, W).permute(0, 2, 3, 1)
+        box_regression = box_regression.reshape(N, -1, 4)
+        # from (N, 4, H, W) to (N, H, W, 1) to (N, M)
+        # map centerness prob to (-1, +1)
+        centerness = centerness.view(N, 1, H, W).permute(0, 2, 3, 1)
+        centerness = centerness.reshape(N, -1).sigmoid()
+
+        # before NMS, per level filter out low cls prob with threshold 0.05
+        # after this candidate_inds of size (N, M, C) with values corresponding to
+        # low prob predictions become 0, otherwise 1
+        candidate_inds = box_cls > self.pre_nms_thresh
+
+        # pre_nms_top_n of size (N, M * C) => (N, 1)
+        # N -> batch index, 1 -> total number of bbox predictions per image
+        pre_nms_top_n = candidate_inds.view(N, -1).sum(1)
+        # total number of proposal before NMS
+        # if have more than self.pre_nms_top_n (1000) clamp to 1000
+        pre_nms_top_n = pre_nms_top_n.clamp(max=self.pre_nms_top_n)
+
+        # multiply the classification scores with centerness scores
+        # (N, M, C) * (N, M, 1)
+        box_cls = box_cls * centerness[:, :, None]
 
         results = []
-        for i in range(10000):
-            
-            if( torch.Tensor(i) == N ):
-                break
+        for i in range(N):
             # filer out low score candidates
             per_box_cls = box_cls[i]  #  (M, C)
             per_candidate_inds = candidate_inds[i]  #  (M, C)
@@ -259,7 +269,8 @@ class PanopticFromDenseBox:
                 per_locations[:, 1] - per_box_regression[:, 1],
                 per_locations[:, 0] + per_box_regression[:, 2],
                 per_locations[:, 1] + per_box_regression[:, 3],
-            ], dim=1)
+            ],
+                                     dim=1)
 
             h, w = image_sizes[i]
 
@@ -276,15 +287,19 @@ class PanopticFromDenseBox:
 
     def generate_box_feature_map(self, location, box_regression, levelness_logits):
         """Generate bounding box feature aggregating dense bounding box predictions.
+
         Parameters
         ----------
         location: torch.Tensor
             Pixel location of levelness.
+
         box_regression: list of torch.Tensor
             Bounding box offsets from each FPN.
+
         levelness_logits: torch.Tenor
             Global prediction of best source FPN layer for each pixel location.
             Predict at the resolution of (H/4, W/4).
+
         Returns
         -------
         bounding_box_feature_map: torch.Tensor
@@ -320,18 +335,24 @@ class PanopticFromDenseBox:
 
     def mask_reconstruction(self, boxlists, box_feature_map, semantic_prob, box_feature_map_location, h_map, w_map):
         """Reconstruct instance mask from dense bounding box and semantic smoothing.
+
         Parameters
         ----------
         boxlists: List of Boxlist
             Object detection result after NMS.
+
         box_feature_map: torch.Tensor
             Aggregated bounding box feature map.
+
         semantic_prob: torch.Tensor
             Prediction semantic probability.
+
         box_feature_map_location: torch.Tensor
             Corresponding pixel location of bounding box feature map.
+
         h_map: int
             Height of bounding box feature map.
+
         w_map: int
             Width of bounding box feature map.
         """
@@ -392,10 +413,12 @@ class PanopticFromDenseBox:
 
     def select_over_all_levels(self, boxlists):
         """NMS of bounding box candidates.
+
         Parameters
         ----------
         boxlists: list of Boxlist
             Pre-NMS bounding boxes.
+
         Returns
         -------
         results: list of Boxlist
@@ -452,5 +475,3 @@ class PanopticFromDenseBox:
                 result = result[keep]
             results.append(result)
         return results
-
-

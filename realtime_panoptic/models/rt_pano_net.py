@@ -9,12 +9,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 import apex
-import copy
-import cv2
-import numpy as np
-import torch
 from realtime_panoptic.layers.scale import Scale
-from realtime_panoptic.models.panoptic_from_dense_box import PanopticFromDenseBox
 from realtime_panoptic.utils.bounding_box import BoxList
 from realtime_panoptic.models.backbones import ResNetWithModifiedFPN
 from realtime_panoptic.models.panoptic_from_dense_box import PanopticFromDenseBox
@@ -84,41 +79,6 @@ class RTPanoNet(torch.nn.Module):
         # Parameters
         self.fpn_strides = fpn_strides
 
-        # Use dense bounding boxes to reconstruct panoptic segmentation results.
-        self.panoptic_from_dense_bounding_box = PanopticFromDenseBox(
-            pre_nms_thresh=pre_nms_thresh,
-            pre_nms_top_n=pre_nms_top_n,
-            nms_thresh=nms_thresh,
-            fpn_post_nms_top_n=fpn_post_nms_top_n,
-            min_size=0,
-            num_classes=num_classes,
-            mask_thresh=0.4,
-            instance_id_range=instance_id_range,
-            is_training=False)
-
-        self.label_id_to_names = np.array([
-            [128,  64, 128],
-            [244,  35, 232],
-            [ 70,  70,  70],
-            [102, 102, 156],
-            [190, 153, 153],
-            [153, 153, 153],
-            [250 ,170,  30],
-            [220, 220,   0],
-            [107, 142,  35],
-            [152, 251, 152],
-            [ 70, 130, 180],
-            [220,  20,  60],
-            [255,   0,   0],
-            [  0,   0, 142],
-            [  0,   0,  70],
-            [  0,  60, 100],
-            [  0,  80, 100],
-            [  0,   0, 230],
-            [119,  11,  32],
-            [  0,   0,   0]])
-
-        
 
 
     def forward(self, images, detection_targets=None, segmentation_targets=None):
@@ -162,44 +122,7 @@ class RTPanoNet(torch.nn.Module):
         locations.append(levelness_location)
         xyza = [(1024, 2048)]
 
-        predictions = self.panoptic_from_dense_bounding_box.process(
-          locations, box_cls, box_regression, centerness, levelness_logits, semantic_logits, [(1024, 2048)])
-        
-        #---------------------------------------------------------------------------------------------
-        instance_detection = [o.to('cpu') for o in predictions]
-        predictions = instance_detection[0]
-
-        original_image = images.reshape(1024, 2048, 3)
-        if not isinstance(original_image, np.ndarray):
-            original_image = np.array(original_image.cpu().detach().numpy())
-        original_image_height, original_image_width,_ = original_image.shape
-
-        # overlay_boxes
-        visualized_image = copy.copy(np.array(original_image))
-
-        labels = predictions.get_field("labels").to("cpu")
-        boxes = predictions.bbox
-
-        dtype = labels.dtype
-        palette = torch.tensor([2**25 - 1, 2**15 - 1, 2**21 - 1]).to(dtype)
-        colors = labels[:, None] * palette
-        colors = (colors % 255).numpy().astype("uint8")
-        masks = None
-        if predictions.has_field("mask"):
-            masks = predictions.get_field("mask")
-        else:
-            masks = [None] * len(boxes)
-        # overlay_class_names_and_score
-        if predictions.has_field("scores"):
-            scores = predictions.get_field("scores").tolist()
-        else:
-            scores = [1.0] * len(boxes)
-        # predicted label starts from 1 as 0 is reserved for background.
-        label_names = [self.label_id_to_names[i-1] for i in labels.tolist()]
-        colors = torch.from_numpy(colors)
-    #-------------------------------------------------------------------------------------
-
-        return boxes, labels, torch.Tensor(scores), masks, torch.Tensor(label_names), interpolated_semantic_logits
+        return (locations, box_cls, box_regression, centerness, levelness_logits, semantic_logits, interpolated_semantic_logits)
 
     def compute_locations(self, features):
         """Compute corresponding pixel location for feature maps.

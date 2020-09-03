@@ -37,7 +37,7 @@ cityscapes_colormap = np.array([
 
 cityscapes_instance_label_name = ['person', 'rider', 'car', 'truck', 'bus', 'train', 'motorcycle', 'bicycle']
 warnings.filterwarnings("ignore", category=UserWarning)
-cfg.merge_from_file('RealTimePanoptic-TensorRT/configs/demo_config.yaml')
+cfg.merge_from_file('/workspace/RealTimePanoptic-TensorRT/configs/demo_config.yaml')
 
 ## developing model
 model = RTPanoNet(
